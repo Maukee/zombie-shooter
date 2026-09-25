@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#111511"><title>Dead Frequency — Last transmission</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet"></head>
+<body>
+<canvas id="game"></canvas><div class="vignette"></div><div class="grain"></div><div id="damage"></div>
+<div id="menu">
+<header><a class="brand" href="./"><span class="brand-icon">ϟ</span> DEAD FREQUENCY<span class="brand-small">SURVIVAL PROTOCOL</span></a><div class="status"><i></i> SYSTEM ONLINE <span>／</span> BUILD 01.06</div><button class="sound-toggle" aria-label="Toggle audio">AUDIO <span id="audio-label">ON</span> ◖))</button></header>
+<main class="lobby">
+<div class="eyebrow"><span></span> NO SIGNAL. NO BACKUP. NO WAY OUT.</div>
+<h1>DEAD<br><span>FREQUENCY</span><b>®</b></h1>
+<div class="title-rule"><span>LAST TRANSMISSION</span><i></i><span>00:00:00</span></div>
+<p class="intro">The broadcast stopped. The dead didn't.<br>Hold the line. Make every round count.</p>
+<div class="mission-tag"><i></i> SOLO SURVIVAL <span>•</span> ENDLESS WAVES</div>
+<button id="deploy" class="primary"><span>DEPLOY INTO THE DARK</span><span>↗</span></button>
+<div class="menu-actions"><button id="controls-open"><span>⌘</span> FIELD MANUAL</button><button id="settings-open"><span>⚙</span> SETTINGS</button></div>
+<div class="best"><span>PERSONAL BEST</span><b id="best-wave">—</b><span>ROUNDS SURVIVED</span></div>
+</main>
+<aside class="location"><div class="location-top"><span class="live-dot"></span> LIVE FEED <span>CAM_04</span></div><div class="location-body"><span class="small-label">QUARANTINE ZONE 07</span><h2>THE COMPOUND</h2><p>50°06′ N &nbsp; 14°25′ E &nbsp; / &nbsp; 02:47 AM</p><div class="location-stats"><div><span>THREAT LEVEL</span><b class="red">CRITICAL <i>▮▮▮▮▮</i></b></div><div><span>EXTRACTION</span><b>UNAVAILABLE</b></div></div></div><div class="location-bottom"><span>◈</span> Survive. Resupply. Repeat.</div></aside>
+<footer><div><span class="keyboard-icon">⌨</span> KEYBOARD & MOUSE ONLY <i></i> HEADPHONES RECOMMENDED</div><span class="footer-right">DEATH IS NOT THE END. <b>IT'S THE NEXT ROUND.</b></span></footer>
+<div class="edge-label">RESTRICTED AREA — AUTHORIZED PERSONNEL ONLY</div>
+</div>
+<div id="hud" class="hidden"><div class="hud-top"><div class="round"><span>ROUND</span><b id="round">01</b><small id="wave-state">CONTAINMENT BREACH</small></div><div class="hud-zone">ZONE 07 <span>THE COMPOUND</span></div><div class="score"><span>ESSENCE</span><b id="score">00000</b><small><span id="kills">0</span> ELIMINATED</small></div></div><div id="crosshair"><i></i><i></i><i></i><i></i></div><div id="hitmarker">×</div><div id="announcement"><small>CONTAINMENT BREACH</small><b>ROUND 01</b></div><div id="interaction"></div><div id="hud-message"></div><div class="hud-bottom"><div class="health-panel"><span>ϟ &nbsp; OPERATOR 01</span><div class="health-track"><i id="health-bar"></i></div><small><b id="health">100</b> / 100 <span>VITALS</span></small></div><div class="hud-help">W A S D <span>MOVE</span> SHIFT <span>SPRINT</span> R <span>RELOAD</span> ESC <span>PAUSE</span></div><div class="ammo"><small id="weapon-name">M1911 <span>SEMI-AUTO PISTOL</span></small><b id="ammo">12</b><span> / <span id="reserve">120</span></span><div id="reload-label">.45 ACP &nbsp; • &nbsp; STANDARD ISSUE</div></div></div></div>
+<div id="modal" class="hidden"><div class="modal-card"><span class="small-label" id="modal-label">OPERATOR BRIEFING</span><h2 id="modal-title">FIELD MANUAL</h2><div id="modal-content"></div><button id="modal-close" class="primary"><span>UNDERSTOOD</span><span>↗</span></button></div></div>
+<div id="pause" class="hidden overlay"><div class="pause-card"><span class="small-label">TRANSMISSION INTERRUPTED</span><h2>HOLD POSITION.</h2><p>The outbreak can wait.</p><button id="resume" class="primary">RESUME OPERATION <span>↗</span></button><button id="quit" class="secondary">RETURN TO BASE</button></div></div>
+<div id="death" class="hidden overlay"><div class="pause-card"><span class="small-label red">SIGNAL LOST</span><h2>OVER & OUT.</h2><p>You held the line. Until you couldn't.</p><div class="death-stats" id="death-stats"></div><button id="retry" class="primary">DEPLOY AGAIN <span>↗</span></button><button id="death-quit" class="secondary">RETURN TO BASE</button></div></div>
+<script type="module" src="/src/main.js"></script></body></html>
