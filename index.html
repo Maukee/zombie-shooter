@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#111511" />
+    <title>Dead Frequency — Last transmission</title>
+  </head>
+  <body>
+    <canvas
+      id="game"
+      tabindex="0"
+      aria-label="3D zombie survival game"
+    ></canvas>
+    <div class="vignette"></div>
+    <div class="grain"></div>
+    <div id="damage"></div>
+    <div id="menu">
+      <header>
+        <a class="brand" href="./"
+          ><span class="brand-icon">ϟ</span
+          ><span
+            >DEAD FREQUENCY<small>AN ENDLESS SURVIVAL EXPERIENCE</small></span
+          ></a
+        >
+        <nav>
+          <span class="nav-active">SURVIVAL</span
+          ><button id="controls-open">HOW TO PLAY</button
+          ><button id="settings-open">SETTINGS</button>
+        </nav>
+        <button class="sound-toggle" aria-label="Toggle audio">
+          SOUND <span id="audio-label">ON</span
+          ><span class="sound-bars">▂▄▆</span>
+        </button>
+      </header>
+      <main class="lobby">
+        <div class="eyebrow"><span></span> OUTBREAK PROTOCOL / 001</div>
+        <h1>DEAD<br /><span>FREQUENCY</span></h1>
+        <p class="intro">
+          The dead keep coming.<br />How long can you hold the line?
+        </p>
+        <div class="mode-card">
+          <span class="mode-icon">✛</span>
+          <div>
+            <strong>SOLO SURVIVAL</strong
+            ><small>THE COMPOUND <span>·</span> ENDLESS WAVES</small>
+          </div>
+          <span class="mode-check">✓</span>
+        </div>
+        <button id="deploy" class="primary" disabled>
+          <span>LOADING COMPOUND…</span><span>→</span>
+        </button>
+        <div class="launch-note">
+          <span class="live-dot"></span
+          ><span id="ready-label">PREPARING THE OUTBREAK</span
+          ><a class="standalone" target="_blank" rel="noopener"
+            >OPEN FULL GAME ↗</a
+          >
+        </div>
+        <div class="quick-controls">
+          <div><kbd>W A S D</kbd><span>MOVE</span></div>
+          <div><kbd>MOUSE</kbd><span>AIM & FIRE</span></div>
+          <div><kbd>R</kbd><span>RELOAD</span></div>
+          <div><kbd>ESC</kbd><span>PAUSE</span></div>
+        </div>
+      </main>
+      <aside class="location">
+        <span class="small-label"
+          ><i class="live-dot"></i> DEPLOYMENT ZONE 07</span
+        >
+        <h2>THE COMPOUND</h2>
+        <p>Unlock the compound. Survive the outbreak.</p>
+        <p class="expansion-note">
+          <b>NEW</b> &nbsp; 2 BUYABLE ROOMS<br />MYSTERY WEAPONS · 4 PERK DRINKS
+        </p>
+        <div class="location-stats">
+          <span>THREAT LEVEL</span><b>HIGH <i>▮▮▮▮▯</i></b>
+        </div>
+      </aside>
+      <div class="menu-bottom">
+        <div class="best">
+          <span>PERSONAL BEST</span><b id="best-wave">—</b
+          ><span>ROUND REACHED</span>
+        </div>
+        <span class="desktop-note"
+          >DESKTOP ONLY <i>／</i> HEADPHONES RECOMMENDED</span
+        ><span class="version">EARLY ACCESS <b>V0.3</b></span>
+      </div>
+    </div>
+    <div id="hud" class="hidden">
+      <div class="hud-top">
+        <div class="round">
+          <span>ROUND</span><b id="round">01</b
+          ><small id="wave-state">CONTAINMENT BREACH</small
+          ><small id="enemy-count">0 HOSTILES REMAINING</small>
+        </div>
+        <div class="hud-zone">
+          ZONE 07 <span id="zone-name">THE COMPOUND</span
+          ><small id="objective">NORTH: ARMORY • 500</small>
+        </div>
+        <div class="score">
+          <span>ESSENCE</span><b id="score">00000</b
+          ><small><span id="kills">0</span> ELIMINATED</small>
+        </div>
+      </div>
+      <div id="input-status" class="hidden">
+        <span>PREVIEW CONTROLS</span> Move mouse to aim · screen edges turn
+        <a class="standalone" target="_blank" rel="noopener"
+          >OPEN FULL GAME ↗</a
+        >
+      </div>
+      <div id="crosshair"><i></i><i></i><i></i><i></i></div>
+      <div id="hitmarker">×</div>
+      <div id="announcement">
+        <small>CONTAINMENT BREACH</small><b>ROUND 01</b>
+      </div>
+      <div id="interaction"></div>
+      <div id="tracker"></div>
+      <div id="perk-strip"></div>
+      <div id="powerup-status"></div>
+      <div id="hud-message"></div>
+      <div class="hud-bottom">
+        <div class="health-panel">
+          <span>ϟ &nbsp; OPERATOR 01</span>
+          <div class="health-track"><i id="health-bar"></i></div>
+          <small
+            ><b id="health">100</b> / <span id="max-health">100</span>
+            <span>VITALS</span></small
+          >
+        </div>
+        <div class="hud-help">
+          W A S D <span>MOVE</span> SHIFT <span>SPRINT</span> R
+          <span>RELOAD</span> ESC <span>PAUSE</span>
+        </div>
+        <div class="ammo">
+          <small id="weapon-name">M1911 <span>SEMI-AUTO PISTOL</span></small
+          ><b id="ammo">12</b><span> / <span id="reserve">120</span></span>
+          <div id="reload-label">.45 ACP &nbsp; • &nbsp; STANDARD ISSUE</div>
+        </div>
+      </div>
+    </div>
+    <div id="modal" class="hidden">
+      <div class="modal-card">
+        <span class="small-label" id="modal-label">OPERATOR BRIEFING</span>
+        <h2 id="modal-title">FIELD MANUAL</h2>
+        <div id="modal-content"></div>
+        <button id="modal-close" class="primary">
+          <span>UNDERSTOOD</span><span>↗</span>
+        </button>
+      </div>
+    </div>
+    <div id="pause" class="hidden overlay">
+      <div class="pause-card">
+        <span class="small-label">TRANSMISSION INTERRUPTED</span>
+        <h2>GAME PAUSED</h2>
+        <p>The outbreak can wait. Your progress is safe.</p>
+        <button id="resume" class="primary">RESUME GAME <span>↗</span></button
+        ><button id="quit" class="secondary">RETURN TO BASE</button>
+      </div>
+    </div>
+    <div id="death" class="hidden overlay">
+      <div class="pause-card">
+        <span class="small-label red">SIGNAL LOST</span>
+        <h2>OVER & OUT.</h2>
+        <p>You held the line. Until you couldn't.</p>
+        <div class="death-stats" id="death-stats"></div>
+        <button id="retry" class="primary">TRY AGAIN <span>↗</span></button
+        ><button id="death-quit" class="secondary">RETURN TO BASE</button>
+      </div>
+    </div>
+    <script type="module" src="/src/bootstrap.js"></script>
+  </body>
+</html>
