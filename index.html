@@ -69,7 +69,10 @@
           ><i class="live-dot"></i> DEPLOYMENT ZONE 07</span
         >
         <h2>THE COMPOUND</h2>
-        <p>One operator. No extraction.</p>
+        <p>Unlock the compound. Survive the outbreak.</p>
+        <p class="expansion-note">
+          <b>NEW</b> &nbsp; 2 BUYABLE ROOMS<br />MYSTERY WEAPONS · 4 PERK DRINKS
+        </p>
         <div class="location-stats">
           <span>THREAT LEVEL</span><b>HIGH <i>▮▮▮▮▯</i></b>
         </div>
@@ -81,7 +84,7 @@
         </div>
         <span class="desktop-note"
           >DESKTOP ONLY <i>／</i> HEADPHONES RECOMMENDED</span
-        ><span class="version">EARLY ACCESS <b>V0.2</b></span>
+        ><span class="version">EARLY ACCESS <b>V0.3</b></span>
       </div>
     </div>
     <div id="hud" class="hidden">
@@ -91,7 +94,10 @@
           ><small id="wave-state">CONTAINMENT BREACH</small
           ><small id="enemy-count">0 HOSTILES REMAINING</small>
         </div>
-        <div class="hud-zone">ZONE 07 <span>THE COMPOUND</span></div>
+        <div class="hud-zone">
+          ZONE 07 <span id="zone-name">THE COMPOUND</span
+          ><small id="objective">NORTH: ARMORY • 500</small>
+        </div>
         <div class="score">
           <span>ESSENCE</span><b id="score">00000</b
           ><small><span id="kills">0</span> ELIMINATED</small>
@@ -109,12 +115,18 @@
         <small>CONTAINMENT BREACH</small><b>ROUND 01</b>
       </div>
       <div id="interaction"></div>
+      <div id="tracker"></div>
+      <div id="perk-strip"></div>
+      <div id="powerup-status"></div>
       <div id="hud-message"></div>
       <div class="hud-bottom">
         <div class="health-panel">
           <span>ϟ &nbsp; OPERATOR 01</span>
           <div class="health-track"><i id="health-bar"></i></div>
-          <small><b id="health">100</b> / 100 <span>VITALS</span></small>
+          <small
+            ><b id="health">100</b> / <span id="max-health">100</span>
+            <span>VITALS</span></small
+          >
         </div>
         <div class="hud-help">
           W A S D <span>MOVE</span> SHIFT <span>SPRINT</span> R

@@ -1,6 +1,16 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { MouseControls } from "./controls.js";
+import { Navigation } from "./navigation.js";
+import { buildExpansion } from "./expansion.js";
+import {
+  WEAPONS,
+  PERKS,
+  ENEMIES,
+  BOX_COST,
+  enemyType,
+  mysteryWeapon,
+} from "./game-rules.js";
 
 const $ = (id) => document.getElementById(id);
 const scene = new THREE.Scene();
@@ -184,21 +194,25 @@ for (let x = -6; x < 18; x += 3.5)
     box(0.07, 2, 0.2, steel, x, y, -25.16);
     box(1.6, 0.07, 0.2, steel, x, y, -25.16);
   }
-box(15, 7, 7, concrete, -20, 3.5, -18, true);
-box(16, 0.3, 8, steel, -20, 7.1, -18);
+
 box(8, 10, 17, concrete, 29, 5, -14);
 for (let y = 3; y < 10; y += 3)
   for (let z = -21; z < -5; z += 3) {
     box(0.15, 1.8, 1.5, dark, 24.9, y, z);
   }
-// Central bunker facade.
-box(16, 5.8, 5, concrete, 6, 2.9, -22, true);
-box(17, 0.3, 6, steel, 6, 5.9, -22);
-box(5.5, 3.8, 0.2, dark, 6, 1.9, -19.4);
-for (let i = 0; i < 14; i++)
-  box(5.2, 0.045, 0.15, steel, 6, 0.2 + i * 0.26, -19.23);
-box(0.7, 4.5, 0.8, concrete, 2.8, 2, -19.4);
-box(0.7, 4.5, 0.8, concrete, 9.2, 2, -19.4);
+// Accessible interiors replace the old solid bunker/building meshes.
+const expansion = buildExpansion({
+  scene,
+  box,
+  sign,
+  mat,
+  concrete,
+  steel,
+  dark,
+  wood,
+  colliders,
+});
+const { rooms, doors, mystery, machines, upgrade } = expansion;
 const compoundSign = sign("QUARANTINE  /  07", 10, 0.9, "#b8bea0", "#30372b");
 compoundSign.position.set(6, 5.12, -19.42);
 scene.add(compoundSign);
@@ -214,6 +228,7 @@ scene.add(fenceGroup);
 for (let side of [-1, 1]) {
   const z = side === 1 ? -8 : 16;
   const x = side === 1 ? 17 : -17;
+  colliders.push({ x: x + 6, z, w: 6.38, d: 0.4 });
   for (let j = 0; j <= 12; j += 3) box(0.09, 3.7, 0.09, steel, x + j, 1.85, z);
   for (let h of [0.25, 3.4]) box(12, 0.055, 0.055, steel, x + 6, h, z);
   const geo = new THREE.CylinderGeometry(0.009, 0.009, 4.5, 3);
@@ -480,9 +495,18 @@ const zGeos = {
   eye: new THREE.BoxGeometry(0.055, 0.03, 0.022),
 };
 const zombies = [];
-function zombie(x, z, decor = false) {
+const spitterSacMaterial = new THREE.MeshStandardMaterial({
+  color: 0x93c638,
+  emissive: 0x6b9321,
+  emissiveIntensity: 0.7,
+});
+const enemyMaterials = Object.fromEntries(
+  Object.entries(ENEMIES).map(([id, v]) => [id, mat(v.color)]),
+);
+function zombie(x, z, decor = false, type = "walker") {
+  const stats = ENEMIES[type];
   const root = new THREE.Group();
-  const body = new THREE.Mesh(zGeos.body, zShirt);
+  const body = new THREE.Mesh(zGeos.body, enemyMaterials[type]);
   body.position.y = 1.12;
   root.add(body);
   const head = new THREE.Mesh(zGeos.head, zSkin);
@@ -492,6 +516,7 @@ function zombie(x, z, decor = false) {
   for (const e of [-1, 1]) {
     const eye = new THREE.Mesh(zGeos.eye, eyeMat);
     eye.position.set(e * 0.084, 1.72, -0.174);
+    eye.userData.headshot = true;
     root.add(eye);
   }
   const legs = [],
@@ -517,6 +542,18 @@ function zombie(x, z, decor = false) {
   wound.position.set(0.1, 1.15, -0.175);
   root.add(wound);
   root.position.set(x, 0, z);
+  root.scale.set(stats.scale, stats.scale, stats.scale);
+  if (type === "brute") {
+    const armor = new THREE.Mesh(zGeos.body, steel);
+    armor.scale.set(1.14, 0.65, 1.3);
+    armor.position.set(0, 1.2, -0.02);
+    root.add(armor);
+  }
+  if (type === "spitter") {
+    const sac = new THREE.Mesh(zGeos.head, spitterSacMaterial);
+    sac.position.set(0, 1.22, 0.25);
+    root.add(sac);
+  }
   scene.add(root);
   root.traverse((o) => {
     if (o.isMesh) o.castShadow = true;
@@ -527,7 +564,15 @@ function zombie(x, z, decor = false) {
     body,
     legs,
     arms,
-    hp: 100,
+    hp: (100 + (decor ? 0 : round * 9)) * stats.hp,
+    type,
+    stats,
+    stuckTime: 0,
+    checkTime: 0,
+    lastX: x,
+    lastZ: z,
+    spitCooldown: 2,
+    bestDistance: Infinity,
     phase: Math.random() * 6,
     attack: 0,
     decor,
@@ -564,6 +609,31 @@ let mode = "menu",
   muted = false,
   mouseDown = false,
   ads = false;
+let weaponId = "pistol",
+  maxHealth = 100,
+  navigationTimer = 0,
+  recoveredEnemies = 0;
+const ownedPerks = new Set();
+const drops = [],
+  projectiles = [];
+let powerupTimer = 0,
+  powerup = null;
+const nav = new Navigation(blocked, colliders);
+const acidGeometry = new THREE.SphereGeometry(0.15, 8, 6);
+const acidMaterial = new THREE.MeshBasicMaterial({ color: 0xb2ec4e });
+const dropGeometry = new THREE.OctahedronGeometry(0.28);
+const dropMaterials = {
+  ammo: new THREE.MeshStandardMaterial({
+    color: 0x7addc8,
+    emissive: 0x3fa991,
+    emissiveIntensity: 1,
+  }),
+  double: new THREE.MeshStandardMaterial({
+    color: 0xf1ca68,
+    emissive: 0xbe7d34,
+    emissiveIntensity: 1,
+  }),
+};
 let best = 0;
 try {
   best = +localStorage.getItem("df-best") || 0;
@@ -640,17 +710,21 @@ function updateHUD() {
   $("score").textContent = String(score).padStart(5, "0");
   $("kills").textContent = kills;
   $("health").textContent = Math.ceil(health);
-  $("health-bar").style.width = health + "%";
+  $("health-bar").style.width = (health / maxHealth) * 100 + "%";
+  $("max-health").textContent = maxHealth;
+  $("perk-strip").innerHTML = [...ownedPerks]
+    .map(
+      (id) =>
+        `<span style="--perk:#${PERKS[id].color.toString(16)}">${PERKS[id].short}</span>`,
+    )
+    .join("");
   $("ammo").textContent = ammo;
   $("reserve").textContent = reserve;
-  $("weapon-name").innerHTML = upgraded
-    ? "AR-7 <span>AUTO RIFLE</span>"
-    : "M1911 <span>SEMI-AUTO PISTOL</span>";
+  const weapon = WEAPONS[weaponId];
+  $("weapon-name").innerHTML = `${weapon.name} <span>${weapon.label}</span>`;
   $("reload-label").textContent = reloading
     ? "RELOADING …"
-    : upgraded
-      ? "5.56 MM • ENHANCED"
-      : ".45 ACP • STANDARD ISSUE";
+    : `${weapon.auto ? "HOLD TO FIRE" : "SEMI-AUTO"} • ${ownedPerks.has("quick") ? "QUICK HANDS" : "STANDARD"}`;
 }
 function message(text) {
   $("hud-message").textContent = text;
@@ -667,9 +741,28 @@ function clearZombies() {
 }
 function begin() {
   clearZombies();
+  for (const d of doors) {
+    d.open = false;
+    d.collider.enabled = true;
+    d.mesh.position.y = 1.75;
+  }
+  resetMystery();
+  mystery.lid.rotation.x = 0;
+  for (const d of [...drops, ...projectiles]) scene.remove(d.mesh);
+  drops.length = 0;
+  projectiles.length = 0;
+  recoveredEnemies = 0;
+  navigationTimer = 0;
+  nav.rebuild();
+  nav.update(0, 11);
   round = 0;
   score = 0;
   kills = 0;
+  maxHealth = 100;
+  ownedPerks.clear();
+  powerup = null;
+  powerupTimer = 0;
+  weaponId = "pistol";
   health = 100;
   ammo = 12;
   reserve = 120;
@@ -772,15 +865,24 @@ function startWave() {
   spawnTimer = 0.5;
   intermission = 0;
   reserve += round > 1 ? 24 : 0;
-  health = Math.min(100, health + 25);
+  health = Math.min(maxHealth, health + 25);
   $("wave-state").textContent = "CONTAINMENT BREACH";
-  announce("THEY HEARD YOU", `ROUND ${String(round).padStart(2, "0")}`);
+  announce(
+    round === 2
+      ? "RUNNERS INCOMING"
+      : round === 3
+        ? "ACID SPITTERS INCOMING"
+        : round === 4
+          ? "ARMORED BRUTES INCOMING"
+          : "THEY HEARD YOU",
+    `ROUND ${String(round).padStart(2, "0")}`,
+  );
   sound("wave");
   updateHUD();
 }
 function reload() {
   if (reloading || ammo === capacity || reserve <= 0) return;
-  reloading = upgraded ? 1.9 : 1.45;
+  reloading = WEAPONS[weaponId].reload * (ownedPerks.has("quick") ? 0.55 : 1);
   sound("reload");
   updateHUD();
 }
@@ -790,7 +892,12 @@ const temp = new THREE.Vector3();
 const solidMeshes = [];
 scene.updateMatrixWorld(true);
 scene.traverse((o) => {
-  if (o.isMesh && !o.userData.zombie && !gun.children.includes(o))
+  if (
+    o.isMesh &&
+    !o.userData.zombie &&
+    !o.userData.dynamic &&
+    !gun.children.includes(o)
+  )
     solidMeshes.push(o);
 });
 // Bake the static environment into material batches to minimize draw calls.
@@ -820,6 +927,7 @@ for (const [material, meshes] of batches) {
     mesh.geometry.dispose();
   }
 }
+solidMeshes.push(...doors.map((d) => d.mesh));
 function shoot() {
   if (mode !== "playing" || shotCooldown > 0 || reloading) return;
   if (ammo <= 0) {
@@ -827,74 +935,490 @@ function shoot() {
     return;
   }
   ammo--;
-  shotCooldown = upgraded ? 0.115 : 0.25;
-  recoil = 0.085;
+  const weapon = WEAPONS[weaponId];
+  shotCooldown = weapon.rate;
+  recoil = weaponId === "shotgun" ? 0.15 : 0.085;
   muzzle.visible = true;
   muzzle.rotation.y = Math.random() * 6;
   muzzleLight.intensity = 5;
   sound("shot");
+  camera.updateMatrixWorld();
   camera.getWorldDirection(direction);
-  raycaster.set(camera.position, direction);
-  raycaster.far = 60;
   const targets = [];
   for (const z of zombies)
     if (!z.dead)
       z.root.traverse((o) => {
         if (o.isMesh) targets.push(o);
       });
-  const hits = raycaster.intersectObjects(targets, false);
-  if (hits.length) {
-    const h = hits[0];
+  for (let pellet = 0; pellet < weapon.pellets; pellet++) {
+    const spread = weapon.spread * (ads ? 0.45 : 1);
+    const dir = direction
+      .clone()
+      .add(
+        new THREE.Vector3(
+          (Math.random() - 0.5) * spread * 2,
+          (Math.random() - 0.5) * spread * 2,
+          (Math.random() - 0.5) * spread * 2,
+        ),
+      )
+      .normalize();
+    raycaster.set(camera.position, dir);
+    raycaster.far = weaponId === "shotgun" ? 24 : 65;
+    const hits = raycaster.intersectObjects(targets, false);
+    const hit = hits.find((h) => !h.object.userData.zombie.dead);
+    if (!hit) continue;
     const wall = raycaster.intersectObjects(solidMeshes, false)[0];
-    if (!wall || wall.distance > h.distance) {
-      const z = h.object.userData.zombie;
-      const headshot = h.object === z.head;
-      z.hp -= headshot ? 180 : upgraded ? 60 : 48;
-      score += 10;
-      hitTimer = 0.12;
-      $("hitmarker").style.opacity = 1;
-      if (z.hp <= 0) {
-        z.dead = true;
-        z.deathTime = 0.6;
-        score += headshot ? 120 : 80;
-        kills++;
-        if (kills % 5 === 0) {
-          reserve += 24;
-          message("+24 ROUNDS • AMMUNITION RECOVERED");
-        }
-      }
-    }
+    if (wall && wall.distance < hit.distance) continue;
+    const z = hit.object.userData.zombie,
+      headshot = hit.object === z.head || hit.object.userData.headshot === true;
+    z.hp -= headshot ? weapon.head : weapon.damage;
+    score += powerup === "double" ? 20 : 10;
+    hitTimer = 0.12;
+    $("hitmarker").style.opacity = 1;
+    if (z.hp <= 0) eliminate(z, headshot);
   }
   updateHUD();
 }
 function blocked(x, z) {
   if (Math.abs(x) > 23.8 || Math.abs(z) > 23.8) return true;
   return colliders.some(
-    (c) => Math.abs(x - c.x) < c.w && Math.abs(z - c.z) < c.d,
+    (c) =>
+      c.enabled !== false && Math.abs(x - c.x) < c.w && Math.abs(z - c.z) < c.d,
   );
 }
-function interact() {
-  if (camera.position.distanceTo(new THREE.Vector3(-21, 1.72, -8)) > 3.4)
-    return;
-  if (score >= 500 && !upgraded) {
-    score -= 500;
-    upgraded = true;
-    capacity = 30;
-    ammo = 30;
-    reserve += 120;
-    const barrel = gunBox(0.08, 0.085, 0.35, gunmetal, 0, -0.01, -0.39);
+function equip(id) {
+  weaponId = id;
+  const w = WEAPONS[id];
+  capacity = w.capacity;
+  ammo = capacity;
+  reserve = w.reserve;
+  upgraded = id !== "pistol";
+  reloading = 0;
+  shotCooldown = 0;
+  for (const o of [...gun.children])
+    if (o.name === "upgrade") {
+      gun.remove(o);
+      o.geometry.dispose();
+      if (o.userData.ownMaterial) o.material.dispose();
+    }
+  muzzle.position.z = -0.38;
+  if (id !== "pistol") {
+    const paint = mat(w.color, 0.4, 0.6);
+    const barrel = gunBox(
+      id === "shotgun" ? 0.13 : 0.08,
+      0.085,
+      id === "smg" ? 0.18 : 0.4,
+      paint,
+      0,
+      -0.01,
+      -0.36,
+    );
     barrel.name = "upgrade";
-    muzzle.position.z = -0.59;
-    message("AR-7 ACQUIRED • HOLD TO FIRE");
-    sound("reload");
-  } else if (score >= 150) {
-    score -= 150;
-    reserve += 90;
-    health = 100;
-    message("RESUPPLIED • +90 ROUNDS • HEALTH RESTORED");
-    sound("reload");
-  } else message("NOT ENOUGH ESSENCE");
+    barrel.userData.ownMaterial = true;
+    const mag = gunBox(
+      id === "lmg" ? 0.22 : 0.07,
+      0.16,
+      0.1,
+      gunmetal,
+      0,
+      -0.16,
+      -0.12,
+    );
+    mag.name = "upgrade";
+    muzzle.position.z = id === "smg" ? -0.47 : -0.59;
+  }
   updateHUD();
+}
+function eliminate(z, headshot = false) {
+  if (z.dead) return;
+  z.dead = true;
+  z.deathTime = 0.6;
+  kills++;
+  score +=
+    (z.stats.reward + (headshot ? 40 : 0)) * (powerup === "double" ? 2 : 1);
+  if (kills % 5 === 0) {
+    reserve += 24;
+    message("+24 ROUNDS • AMMUNITION RECOVERED");
+  }
+  if (kills % 7 === 0) {
+    const type = kills % 14 === 0 ? "double" : "ammo";
+    const mesh = new THREE.Mesh(dropGeometry, dropMaterials[type]);
+    mesh.position.copy(z.root.position);
+    mesh.position.y = 0.5;
+    scene.add(mesh);
+    drops.push({ mesh, type, ttl: 22 });
+  }
+}
+function inRoom(id) {
+  const r = rooms.find((r) => r.id === id);
+  return (
+    doors.find((d) => d.id === id).open &&
+    Math.abs(camera.position.x - r.x) < r.w / 2 - 0.2 &&
+    camera.position.z < r.front - 0.3 &&
+    camera.position.z > r.z - r.d / 2 + 0.2
+  );
+}
+function interactions() {
+  const list = [];
+  for (const door of doors)
+    if (!door.open)
+      list.push({
+        x: door.x,
+        z: door.z,
+        label: `OPEN ${door.name} • ${door.price} ESSENCE`,
+        kind: "door",
+        value: door,
+      });
+  for (const m of machines)
+    if (inRoom(m.room)) {
+      const p = PERKS[m.id];
+      list.push({
+        ...m,
+        kind: "perk",
+        value: m,
+        label: ownedPerks.has(m.id)
+          ? `${p.name} • ACTIVE`
+          : `${p.name} • ${p.price} • ${p.description}`,
+      });
+    }
+  if (inRoom("armory")) {
+    list.push({
+      ...mystery,
+      kind: "box",
+      label:
+        mystery.state === "rolling"
+          ? "MYSTERY BOX • ROLLING…"
+          : mystery.state === "ready"
+            ? `TAKE ${WEAPONS[mystery.result].name} • REPLACES CURRENT WEAPON`
+            : `MYSTERY BOX • ${BOX_COST} ESSENCE`,
+    });
+    list.push({
+      ...upgrade,
+      kind: "rifle",
+      label:
+        weaponId === "rifle"
+          ? "AR-7 AMMO • 150 ESSENCE"
+          : "WALL WEAPON: AR-7 • 500 ESSENCE",
+    });
+  }
+  list.push({
+    x: -21,
+    z: -7.7,
+    kind: "supply",
+    label:
+      weaponId === "pistol" && score >= 500
+        ? "ACQUIRE AR-7 • 500 ESSENCE"
+        : "RESUPPLY + HEALTH • 150 ESSENCE",
+  });
+  return list
+    .filter(
+      (i) =>
+        Math.hypot(camera.position.x - i.x, camera.position.z - i.z) < 2.5 &&
+        nav.clear(camera.position.x, camera.position.z, i.x, i.z),
+    )
+    .sort(
+      (a, b) =>
+        Math.hypot(camera.position.x - a.x, camera.position.z - a.z) -
+        Math.hypot(camera.position.x - b.x, camera.position.z - b.z),
+    );
+}
+function spend(price) {
+  if (score < price) {
+    message(`NEED ${price - score} MORE ESSENCE`);
+    return false;
+  }
+  score -= price;
+  sound("reload");
+  return true;
+}
+function interact() {
+  const item = interactions()[0];
+  if (!item) return;
+  if (item.kind === "door") {
+    const d = item.value;
+    if (!spend(d.price)) return;
+    d.open = true;
+    d.collider.enabled = false;
+    nav.rebuild();
+    nav.update(camera.position.x, camera.position.z);
+    message(`${d.name} OPEN • THE INFECTED CAN FOLLOW YOU INSIDE`);
+  } else if (item.kind === "perk") {
+    const id = item.value.id;
+    if (ownedPerks.has(id)) {
+      message("PERK ALREADY ACTIVE");
+      return;
+    }
+    if (!spend(PERKS[id].price)) return;
+    ownedPerks.add(id);
+    if (id === "iron") {
+      maxHealth = 200;
+      health = maxHealth;
+    }
+    message(`${PERKS[id].name} • ${PERKS[id].description}`);
+  } else if (item.kind === "box") {
+    if (mystery.state === "rolling") return;
+    if (mystery.state === "ready") {
+      equip(mystery.result);
+      message(`${WEAPONS[weaponId].name} EQUIPPED`);
+      resetMystery();
+    } else if (spend(BOX_COST)) {
+      mystery.state = "rolling";
+      mystery.timer = 2.4;
+      mystery.result = mysteryWeapon(weaponId);
+      setBoxDisplay("ROLLING…");
+    }
+  } else if (item.kind === "rifle") {
+    if (weaponId === "rifle") {
+      if (spend(150)) reserve += 120;
+    } else if (spend(500)) {
+      equip("rifle");
+      message("AR-7 EQUIPPED");
+    }
+  } else if (item.kind === "supply") {
+    if (weaponId === "pistol" && score >= 500) {
+      if (spend(500)) equip("rifle");
+    } else if (spend(150)) {
+      reserve += 90;
+      health = maxHealth;
+      message("RESUPPLIED • +90 ROUNDS • FULL HEALTH");
+    }
+  }
+  updateHUD();
+}
+function setBoxDisplay(text) {
+  const texture = mystery.display.material.map,
+    c = texture.image,
+    ctx = c.getContext("2d");
+  ctx.fillStyle = "#242d2c";
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.fillStyle = "#ffe8a2";
+  ctx.font = "bold 85px monospace";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, c.width / 2, c.height / 2, c.width - 40);
+  texture.needsUpdate = true;
+}
+function resetMystery() {
+  mystery.state = "idle";
+  mystery.timer = 0;
+  mystery.result = null;
+  setBoxDisplay("MYSTERY / 650");
+}
+function recover(z) {
+  const p = nav.spawn(camera.position.x, camera.position.z, Math.random, 12);
+  if (!p) return false;
+  z.root.position.set(p.x, 0, p.z);
+  z.stuckTime = 0;
+  z.checkTime = 0;
+  z.lastX = p.x;
+  z.lastZ = p.z;
+  z.bestDistance = Infinity;
+  recoveredEnemies++;
+  return true;
+}
+function damagePlayer(amount) {
+  health = Math.max(0, health - amount);
+  lastDamage = gameTime;
+  sound("hit");
+  updateHUD();
+  if (health <= 0) die();
+}
+function updateEnemies(dt) {
+  for (let i = zombies.length - 1; i >= 0; i--) {
+    const z = zombies[i];
+    if (z.dead) {
+      z.deathTime -= dt;
+      z.root.rotation.x = -(1 - z.deathTime / 0.6) * 1.5;
+      z.root.position.y -= dt * 0.5;
+      if (z.deathTime <= 0) {
+        scene.remove(z.root);
+        zombies.splice(i, 1);
+      }
+      continue;
+    }
+    const pos = z.root.position;
+    temp.subVectors(camera.position, pos);
+    temp.y = 0;
+    const distance = temp.length();
+    z.root.rotation.y = Math.atan2(-temp.x, -temp.z);
+    temp.normalize();
+    const zs = Math.min(3.2, 0.8 + round * 0.14) * z.stats.speed;
+    if (
+      distance > 1.1 ||
+      !nav.clear(pos.x, pos.z, camera.position.x, camera.position.z)
+    ) {
+      const waypoint = nav.waypoint(
+        pos.x,
+        pos.z,
+        camera.position.x,
+        camera.position.z,
+      );
+      if (waypoint) {
+        const dx = waypoint.x - pos.x,
+          dz = waypoint.z - pos.z,
+          len = Math.hypot(dx, dz),
+          step = Math.min(zs * dt, len);
+        if (len > 0.001) {
+          const nx = pos.x + (dx / len) * step,
+            nz = pos.z + (dz / len) * step;
+          if (nav.clear(pos.x, pos.z, nx, nz)) {
+            pos.x = nx;
+            pos.z = nz;
+          }
+        }
+      } else z.stuckTime += dt * 3;
+      z.checkTime += dt;
+      if (z.checkTime >= 1) {
+        const moved = Math.hypot(pos.x - z.lastX, pos.z - z.lastZ);
+        z.stuckTime =
+          moved < 0.12
+            ? z.stuckTime + z.checkTime
+            : Math.max(0, z.stuckTime - 1);
+        z.lastX = pos.x;
+        z.lastZ = pos.z;
+        z.checkTime = 0;
+      }
+      if (blocked(pos.x, pos.z) || z.stuckTime > 4) recover(z);
+    }
+    z.spitCooldown -= dt;
+    if (
+      z.type === "spitter" &&
+      distance < 13 &&
+      distance > 2.5 &&
+      z.spitCooldown <= 0 &&
+      nav.clear(pos.x, pos.z, camera.position.x, camera.position.z)
+    ) {
+      const mesh = new THREE.Mesh(acidGeometry, acidMaterial);
+      mesh.position.set(pos.x, 1.55, pos.z);
+      scene.add(mesh);
+      projectiles.push({
+        mesh,
+        velocity: camera.position
+          .clone()
+          .sub(mesh.position)
+          .normalize()
+          .multiplyScalar(7),
+        ttl: 2.5,
+      });
+      z.spitCooldown = 3;
+    }
+    z.phase += dt * (2.6 + zs);
+    z.legs[0].rotation.x = Math.sin(z.phase) * 0.4;
+    z.legs[1].rotation.x = -Math.sin(z.phase) * 0.4;
+    z.arms.forEach(
+      (a, j) => (a.rotation.x = -1.05 + Math.sin(z.phase + j) * 0.15),
+    );
+    z.root.rotation.z = Math.sin(z.phase) * 0.035;
+    z.attack -= dt;
+    if (
+      distance < 1.45 &&
+      z.attack <= 0 &&
+      nav.clear(pos.x, pos.z, camera.position.x, camera.position.z)
+    ) {
+      health = Math.max(0, health - z.stats.damage);
+      lastDamage = gameTime;
+      z.attack = 1.05;
+      sound("hit");
+      updateHUD();
+      if (health <= 0) {
+        die();
+        break;
+      }
+    }
+  }
+}
+function updateExpansion(dt) {
+  for (const d of doors)
+    d.mesh.position.y = THREE.MathUtils.lerp(
+      d.mesh.position.y,
+      d.open ? 5.5 : 1.75,
+      Math.min(1, dt * 5),
+    );
+  mystery.lid.rotation.x = THREE.MathUtils.lerp(
+    mystery.lid.rotation.x,
+    mystery.state === "idle" ? 0 : -1.1,
+    dt * 6,
+  );
+  if (mystery.state !== "idle") {
+    mystery.timer -= dt;
+    if (mystery.state === "rolling" && mystery.timer <= 0) {
+      mystery.state = "ready";
+      mystery.timer = 15;
+      setBoxDisplay(WEAPONS[mystery.result].name);
+      message(
+        `MYSTERY BOX: ${WEAPONS[mystery.result].name} • E TO CLAIM WITHIN 15s`,
+      );
+      sound("wave");
+    } else if (mystery.state === "ready" && mystery.timer <= 0) {
+      resetMystery();
+      message("MYSTERY WEAPON EXPIRED");
+    }
+  }
+  if (powerupTimer > 0) {
+    powerupTimer -= dt;
+    if (powerupTimer <= 0) {
+      powerup = null;
+      updateHUD();
+    }
+  }
+  for (let i = drops.length - 1; i >= 0; i--) {
+    const d = drops[i];
+    d.ttl -= dt;
+    d.mesh.rotation.y += dt * 2;
+    d.mesh.position.y = 0.55 + Math.sin(gameTime * 3) * 0.12;
+    if (
+      Math.hypot(
+        camera.position.x - d.mesh.position.x,
+        camera.position.z - d.mesh.position.z,
+      ) < 1.2
+    ) {
+      if (d.type === "ammo") {
+        reserve = WEAPONS[weaponId].reserve;
+        ammo = capacity;
+        reloading = 0;
+        message("MAX AMMO");
+      } else {
+        powerup = "double";
+        powerupTimer = 25;
+        message("DOUBLE ESSENCE • 25 SECONDS");
+      }
+      d.ttl = 0;
+      sound("reload");
+      updateHUD();
+    }
+    if (d.ttl <= 0) {
+      scene.remove(d.mesh);
+      drops.splice(i, 1);
+    }
+  }
+  for (let i = projectiles.length - 1; i >= 0; i--) {
+    const p = projectiles[i];
+    p.ttl -= dt;
+    p.mesh.position.addScaledVector(p.velocity, dt);
+    const a = p.mesh.position;
+    if (blocked(a.x, a.z)) p.ttl = 0;
+    if (a.distanceTo(camera.position) < 0.7 && p.ttl > 0) {
+      damagePlayer(14);
+      p.ttl = 0;
+    }
+    if (p.ttl <= 0) {
+      scene.remove(p.mesh);
+      projectiles.splice(i, 1);
+    }
+  }
+  $("powerup-status").textContent = powerup
+    ? `2× ESSENCE • ${Math.ceil(powerupTimer)}s`
+    : "";
+  $("zone-name").textContent = inRoom("armory")
+    ? "ARMORY"
+    : inRoom("infirmary")
+      ? "INFIRMARY"
+      : "THE COMPOUND";
+  $("objective").textContent = !doors[0].open
+    ? "NORTH: ARMORY • 500"
+    : !doors[1].open
+      ? "WEST: INFIRMARY • 750"
+      : "E TO BUY / DRINK / CLAIM";
 }
 $("deploy").onclick = () => {
   for (const o of [...gun.children])
@@ -945,13 +1469,13 @@ $("controls-open").onclick = () => {
   $("modal-label").textContent = "OPERATOR BRIEFING";
   $("modal-title").textContent = "FIELD MANUAL";
   $("modal-content").innerHTML =
-    `<p>Survive the compound. Eliminate the infected to earn essence. Between rounds, find the green resupply terminal on the west wall.</p>${[
+    `<p>Survive the compound. Eliminate the infected to earn essence. Earn round bonuses and unlock the Armory (500) or Infirmary (750). The infected can follow you through opened doors. The Armory has a 650-essence mystery box and a wall rifle. Claim mystery weapons with E within 15 seconds; they replace your current weapon. Buy four permanent-for-this-run perk drinks inside the rooms.</p>${[
       ["W A S D", "Move"],
       ["MOUSE", "Look & aim"],
       ["LEFT MOUSE", "Fire"],
       ["RIGHT MOUSE", "Aim down sights"],
       ["SHIFT / SPACE", "Sprint / jump"],
-      ["R / E", "Reload / use terminal"],
+      ["R / E", "Reload / buy, drink, claim"],
       ["ESC", "Pause"],
     ]
       .map(
@@ -960,7 +1484,7 @@ $("controls-open").onclick = () => {
       )
       .join(
         "",
-      )}<p>Aim for the head for bonus damage. Health regenerates after 5 seconds without damage. Buy the AR-7 for 500 essence; supplies cost 150. If mouse capture is blocked in a preview, move the mouse to aim and hold it near a screen edge to keep turning, or open the full game.</p>`;
+      )}<p>Aim for the head for bonus damage. Runners arrive in round 2, acid spitters in round 3, and armored brutes in round 4. Health regenerates after 5 seconds without damage. Iron Heart increases max health; Quick Hands speeds reloads; Rush Cola boosts movement; Second Wind improves regeneration. Collect glowing pickups for max ammo or double essence. The last three enemies are tracked on the HUD. Buy the AR-7 for 500 essence; supplies cost 150. If mouse capture is blocked in a preview, move the mouse to aim and hold it near a screen edge to keep turning, or open the full game.</p>`;
   $("modal").classList.remove("hidden");
 };
 $("settings-open").onclick = () => {
@@ -1011,7 +1535,13 @@ function frame(now) {
     controls.update(dt);
     gameTime += dt;
     shotCooldown = Math.max(0, shotCooldown - dt);
-    if (mouseDown && upgraded) shoot();
+    if (mouseDown && WEAPONS[weaponId].auto) shoot();
+    updateExpansion(dt);
+    navigationTimer -= dt;
+    if (navigationTimer <= 0) {
+      nav.update(camera.position.x, camera.position.z);
+      navigationTimer = 0.25;
+    }
     if (reloading) {
       reloading -= dt;
       if (reloading <= 0) {
@@ -1030,30 +1560,27 @@ function frame(now) {
     } else if (spawnLeft > 0) {
       spawnTimer -= dt;
       if (spawnTimer <= 0 && zombies.filter((z) => !z.dead).length < 28) {
-        const positions = [
-          [-22, -12],
-          [20, -20],
-          [-22, 20],
-          [22, 20],
-          [0, -17],
-        ];
-        let p = positions[Math.floor(Math.random() * positions.length)];
-        const z = zombie(p[0] + Math.random() * 2, p[1]);
-        z.hp = 100 + round * 9;
-        spawnLeft--;
+        const p = nav.spawn(camera.position.x, camera.position.z);
+        if (p) {
+          zombie(p.x, p.z, false, enemyType(round));
+          spawnLeft--;
+        }
         spawnTimer = Math.max(0.45, 1.6 - round * 0.08);
       }
     } else if (!zombies.some((z) => !z.dead)) {
-      intermission = 8;
+      intermission = 14;
+      score += 150 + round * 25;
+      updateHUD();
       announce("PERIMETER SECURED", "ROUND COMPLETE");
-      $("wave-state").textContent = "RESUPPLY • NEXT WAVE IN 8s";
-      message("WEST WALL TERMINAL • E TO RESUPPLY");
+      $("wave-state").textContent = "RESUPPLY • NEXT WAVE IN 14s";
+      message(`+${150 + round * 25} ROUND BONUS • BUY DOORS, WEAPONS & DRINKS`);
     }
     let dx = (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0),
       dz = (keys.has("KeyS") ? 1 : 0) - (keys.has("KeyW") ? 1 : 0);
     const moving = dx || dz;
     const sprint = keys.has("ShiftLeft") && !ads;
-    const speed = sprint ? 6.3 : ads ? 2.5 : 4.1;
+    const speed =
+      (sprint ? 6.3 : ads ? 2.5 : 4.1) * (ownedPerks.has("rush") ? 1.25 : 1);
     if (moving) {
       const len = Math.hypot(dx, dz);
       dx /= len;
@@ -1099,82 +1626,41 @@ function frame(now) {
       muzzle.visible = false;
       muzzleLight.intensity = 0;
     }
-    for (let i = zombies.length - 1; i >= 0; i--) {
-      const z = zombies[i];
-      if (z.dead) {
-        z.deathTime -= dt;
-        z.root.rotation.x = -(1 - z.deathTime / 0.6) * 1.5;
-        z.root.position.y -= dt * 0.5;
-        if (z.deathTime <= 0) {
-          scene.remove(z.root);
-          zombies.splice(i, 1);
-        }
-        continue;
-      }
-      const pos = z.root.position;
-      temp.subVectors(camera.position, pos);
-      temp.y = 0;
-      const distance = temp.length();
-      z.root.rotation.y = Math.atan2(-temp.x, -temp.z);
-      temp.normalize();
-      const zs = Math.min(3.7, 0.8 + round * 0.17);
-      if (distance > 1.1) {
-        let sx = temp.x * zs * dt,
-          sz = temp.z * zs * dt;
-        for (const other of zombies) {
-          if (other === z || other.dead) continue;
-          const ax = pos.x - other.root.position.x,
-            az = pos.z - other.root.position.z;
-          const dd = ax * ax + az * az;
-          if (dd < 0.65 && dd > 0.001) {
-            sx += ax * dt;
-            sz += az * dt;
-          }
-        }
-        if (!blocked(pos.x + sx, pos.z)) pos.x += sx;
-        else if (!blocked(pos.x, pos.z + Math.sign(temp.x) * zs * dt))
-          pos.z += Math.sign(temp.x) * zs * dt;
-        if (!blocked(pos.x, pos.z + sz)) pos.z += sz;
-        else if (!blocked(pos.x + Math.sign(temp.z) * zs * dt, pos.z))
-          pos.x += Math.sign(temp.z) * zs * dt;
-      }
-      z.phase += dt * (2.6 + zs);
-      z.legs[0].rotation.x = Math.sin(z.phase) * 0.4;
-      z.legs[1].rotation.x = -Math.sin(z.phase) * 0.4;
-      z.arms.forEach(
-        (a, j) => (a.rotation.x = -1.05 + Math.sin(z.phase + j) * 0.15),
+    updateEnemies(dt);
+    if (
+      health > 0 &&
+      health < maxHealth &&
+      gameTime - lastDamage > (ownedPerks.has("recovery") ? 3 : 5)
+    ) {
+      health = Math.min(
+        maxHealth,
+        health + dt * (ownedPerks.has("recovery") ? 14 : 7),
       );
-      z.root.rotation.z = Math.sin(z.phase) * 0.035;
-      z.attack -= dt;
-      if (distance < 1.45 && z.attack <= 0) {
-        health = Math.max(0, health - 18);
-        lastDamage = gameTime;
-        z.attack = 1.05;
-        sound("hit");
-        updateHUD();
-        if (health <= 0) {
-          die();
-          break;
-        }
-      }
-    }
-    if (health > 0 && health < 100 && gameTime - lastDamage > 5) {
-      health = Math.min(100, health + dt * 7);
       updateHUD();
     }
     $("damage").style.opacity = Math.max(
       0,
       (1 - (gameTime - lastDamage) * 1.7) * 0.6,
     );
-    const near =
-      camera.position.distanceTo(new THREE.Vector3(-21, 1.72, -8)) < 3.4;
-    $("interaction").textContent = near
-      ? upgraded
-        ? "[ E ] RESUPPLY + HEALTH • 150 ESSENCE"
-        : score >= 500
-          ? "[ E ] ACQUIRE AR-7 • 500 ESSENCE"
-          : "[ E ] RESUPPLY • 150 ESSENCE  /  AR-7 UNLOCKS AT 500"
-      : "";
+    const nearby = interactions()[0];
+    $("interaction").textContent = nearby ? `[ E ] ${nearby.label}` : "";
+    const living = zombies.filter((z) => !z.dead);
+    const lastEnemy =
+      spawnLeft === 0 && living.length <= 3
+        ? living.sort(
+            (a, b) =>
+              a.root.position.distanceToSquared(camera.position) -
+              b.root.position.distanceToSquared(camera.position),
+          )[0]
+        : null;
+    if (lastEnemy) {
+      const dx = lastEnemy.root.position.x - camera.position.x,
+        dz = lastEnemy.root.position.z - camera.position.z;
+      let angle = Math.atan2(-dx, -dz) - yaw;
+      angle = Math.atan2(Math.sin(angle), Math.cos(angle));
+      $("tracker").textContent =
+        `${Math.abs(angle) < 0.4 ? "↑ AHEAD" : angle > 0 ? "← LEFT" : "RIGHT →"} • ${Math.ceil(Math.hypot(dx, dz))}m • ${lastEnemy.stats.name}`;
+    } else $("tracker").textContent = "";
     if (hitTimer > 0) {
       hitTimer -= dt;
       if (hitTimer <= 0) $("hitmarker").style.opacity = 0;
@@ -1205,6 +1691,25 @@ export function getGameState() {
     ammo,
     reserve,
     health,
+    maxHealth,
+    weaponId,
+    perks: [...ownedPerks],
+    doors: doors.map((d) => ({ id: d.id, open: d.open })),
+    mystery: {
+      state: mystery.state,
+      result: mystery.result,
+      timer: mystery.timer,
+    },
+    recoveredEnemies,
+    enemies: zombies
+      .filter((z) => !z.dead)
+      .map((z) => ({
+        type: z.type,
+        x: z.root.position.x,
+        z: z.root.position.z,
+        hp: z.hp,
+        blocked: blocked(z.root.position.x, z.root.position.z),
+      })),
     kills,
     score,
     gameTime,
@@ -1212,9 +1717,75 @@ export function getGameState() {
     position: camera.position.toArray(),
     yaw,
     pitch,
+    reloading,
+    intermission,
+    spawnLeft,
+    projectiles: projectiles.length,
+    powerup,
+    powerupTimer,
     locked: controls.locked,
     fallback: controls.fallback,
     drawCalls: renderer.info.render.calls,
   };
 }
 if (import.meta.env.DEV) window.__gameState = getGameState;
+// Explicit opt-in test harness: stripped from production by Vite.
+if (import.meta.env.DEV && new URLSearchParams(location.search).has("test")) {
+  window.__gameTest = {
+    grant: (amount) => {
+      score += amount;
+      updateHUD();
+    },
+    teleport: (x, z) => {
+      if (blocked(x, z)) throw new Error("Blocked test position");
+      camera.position.set(x, 1.72, z);
+      nav.update(x, z);
+    },
+    interact,
+    clearWave: () => {
+      for (const z of zombies) if (!z.dead) eliminate(z);
+      spawnLeft = 0;
+      intermission = 0;
+    },
+    spawn: (x, z, type = "walker") => {
+      const zed = zombie(x, z, false, type);
+      return zombies.indexOf(zed);
+    },
+    resetEnemies: () => {
+      clearZombies();
+      spawnLeft = 0;
+      intermission = 999;
+    },
+    navigation: () => ({
+      colliders: colliders.map((c) => ({ ...c })),
+      reachable: Array.from(nav.distance).filter((d) => d >= 0).length,
+    }),
+    testSpawns: (count) => {
+      nav.update(camera.position.x, camera.position.z);
+      return Array.from({ length: count }, () => {
+        const p = nav.spawn(camera.position.x, camera.position.z);
+        return {
+          ...p,
+          blocked: blocked(p.x, p.z),
+          reachable: nav.distance[nav.index(p.x, p.z)] >= 0,
+        };
+      });
+    },
+    setRound: (n) => {
+      round = n;
+      updateHUD();
+    },
+    damage: (amount) => damagePlayer(amount),
+    tick: (dt) => {
+      for (let left = dt; left > 0; left -= 0.05)
+        updateExpansion(Math.min(0.05, left));
+    },
+    advanceEnemies: (steps, dt = 0.05) => {
+      for (let i = 0; i < steps; i++) {
+        gameTime += dt;
+        nav.update(camera.position.x, camera.position.z);
+        updateEnemies(dt);
+      }
+    },
+  };
+}

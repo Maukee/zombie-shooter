@@ -1034,3 +1034,94 @@ select {
 h1 {
   font-size: clamp(64px, min(8.5vw, 13vh), 130px);
 }
+/* Run progression stays visible without obscuring the crosshair. */
+#perk-strip {
+  position: absolute;
+  left: 3%;
+  bottom: 144px;
+  display: flex;
+  gap: 7px;
+  max-width: 45%;
+  flex-wrap: wrap;
+}
+#perk-strip span {
+  border: 1px solid var(--perk);
+  border-left: 4px solid var(--perk);
+  padding: 7px 9px;
+  background: #101c26cf;
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: #f2eee2;
+}
+#tracker {
+  position: absolute;
+  top: 145px;
+  left: 3%;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: #efb77d;
+  background: #11202bb8;
+  padding: 8px 10px;
+  border-left: 2px solid var(--acid);
+}
+#tracker:empty {
+  display: none;
+}
+#powerup-status {
+  position: absolute;
+  right: 3%;
+  top: 135px;
+  color: #f7d285;
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+#interaction:not(:empty) {
+  left: 50%;
+  width: max-content;
+  max-width: 88%;
+  transform: translateX(-50%);
+  padding: 12px 18px;
+  border: 1px solid #efb77d77;
+  background: #0b1722de;
+  line-height: 1.6;
+}
+.health-panel small #max-health {
+  float: none;
+  letter-spacing: 0;
+  font-size: 10px;
+}
+.expansion-note {
+  color: #b2c3bf;
+  font-size: 9px;
+  letter-spacing: 1px;
+  line-height: 1.9;
+  margin-top: 16px;
+}
+.expansion-note b {
+  color: var(--acid);
+  font-weight: 500;
+}
+@media (max-width: 800px) {
+  #perk-strip {
+    bottom: 132px;
+    max-width: 60%;
+  }
+  #perk-strip span {
+    font-size: 7px;
+    padding: 5px;
+  }
+  #tracker {
+    top: 134px;
+    font-size: 8px;
+  }
+  #input-status {
+    bottom: 177px;
+  }
+}
+#objective {
+  display: block;
+  margin-top: 14px;
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: #efb77d;
+}
